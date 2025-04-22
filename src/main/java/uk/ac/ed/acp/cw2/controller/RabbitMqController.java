@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * through RabbitMQ. This class interacts with a RabbitMQ environment which is configured dynamically during runtime.
  */
 @RestController()
-@RequestMapping("/api/v1/rabbitmq")
+@RequestMapping("/rabbitMq")
 public class RabbitMqController {
 
     private static final Logger logger = LoggerFactory.getLogger(RabbitMqController.class);
