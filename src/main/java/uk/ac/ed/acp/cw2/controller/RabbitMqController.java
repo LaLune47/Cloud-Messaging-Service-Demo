@@ -42,40 +42,43 @@ public class RabbitMqController {
 
     public final String StockSymbolsConfig = "stock.symbols";
 
-    @PostMapping("/sendStockSymbols/{queueName}/{symbolCount}")
-    public void sendStockSymbols(@PathVariable String queueName, @PathVariable int symbolCount) {
-        logger.info("Writing {} symbols in queue {}", symbolCount, queueName);
+    @PutMapping("/{queueName}/{messageCount}")
+    public void sendMessagesToQueue(@PathVariable String queueName, @PathVariable int messageCount) {
+        logger.info("Writing {} messages in queue {}", messageCount, queueName);
+        String studentId = "s2677989";
 
         try (Connection connection = factory.newConnection();
              Channel channel = connection.createChannel()) {
 
             channel.queueDeclare(queueName, false, false, false, null);
 
-            for (int i = 0; i < symbolCount; i++) {
-                final String symbol = stockSymbols[new Random().nextInt(stockSymbols.length)];
-                final String value = String.valueOf(i);
+            for (int i = 0; i < messageCount; i++) {
+                String json = String.format("{\"uuid\":\"%s\", \"counter\":%d}", studentId, i);
 
-                String message = String.format("%s:%s", symbol, value);
+//                final String symbol = stockSymbols[new Random().nextInt(stockSymbols.length)];
+//                final String value = String.valueOf(i);
+//
+//                String message = String.format("%s:%s", symbol, value);
 
-                channel.basicPublish("", queueName, null, message.getBytes());
-                System.out.println(" [x] Sent message: " + message + " to queue: " + queueName);
+                channel.basicPublish("", queueName, null, json.getBytes());
+                System.out.println(" [x] Sent message: " + json + " to queue: " + queueName);
             }
 
-            logger.info("{} record(s) sent to Kafka\n", symbolCount);
+            logger.info("{} JSON message(s) sent to RabbitMQ queue {}\n", messageCount, queueName);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
 
-    @GetMapping("/receiveStockSymbols/{queueName}/{consumeTimeMsec}")
-    public List<String> receiveStockSymbols(@PathVariable String queueName, @PathVariable int consumeTimeMsec) {
-        logger.info(String.format("Reading stock-symbols from queue %s", queueName));
+    @GetMapping("/{queueName}/{timeoutInMsec}")
+    public List<String> receiveMessages(@PathVariable String queueName, @PathVariable int timeoutInMsec) {
+        logger.info(String.format("Reading messages from queue %s", queueName));
         List<String> result = new ArrayList<>();
 
         try (Connection connection = factory.newConnection();
              Channel channel = connection.createChannel()) {
 
-
+            // 注册回调函数：每收到一条消息就添加到 result 列表中。
             DeliverCallback deliverCallback = (consumerTag, delivery) -> {
                 String message = new String(delivery.getBody(), StandardCharsets.UTF_8);
                 System.out.printf("[%s]:%s -> %s", queueName, delivery.getEnvelope().getRoutingKey(), message);
@@ -83,9 +86,9 @@ public class RabbitMqController {
             };
 
             System.out.println("start consuming events - to stop press CTRL+C");
-            // Consume with Auto-ACK
+            // Consume with Auto-ACK.  消费队列数据（自动确认 ACK），等待一段时间，然后自动停止。
             channel.basicConsume(queueName, true, deliverCallback, consumerTag -> {});
-            Thread.sleep(consumeTimeMsec);
+            Thread.sleep(timeoutInMsec);
 
             System.out.printf("done consuming events. %d record(s) received\n", result.size());
         } catch (Exception e) {
