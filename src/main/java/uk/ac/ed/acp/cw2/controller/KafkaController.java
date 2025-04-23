@@ -28,7 +28,7 @@ import java.util.concurrent.TimeoutException;
  * and supports security configurations such as SASL and JAAS.
  */
 @RestController()
-@RequestMapping("/api/v1/kafka")
+@RequestMapping("/kafka")
 public class KafkaController {
 
     private static final Logger logger = LoggerFactory.getLogger(KafkaController.class);
@@ -74,48 +74,54 @@ public class KafkaController {
         return kafkaProps;
     }
 
-    @PostMapping("/sendStockSymbols/{symbolTopic}/{symbolCount}")
-    public void sendStockSymbols(@PathVariable String symbolTopic, @PathVariable int symbolCount) {
-        logger.info(String.format("Writing %d symbols in topic %s", symbolCount, symbolTopic));
+    @PutMapping("/{writeTopic}/{messageCount}")
+    public void sendJsonMessages(@PathVariable String writeTopic, @PathVariable int messageCount) {
+        logger.info(String.format("Writing %d messages in topic %s", messageCount, writeTopic));
         Properties kafkaProps = getKafkaProperties(environment);
 
-        try (var producer = new KafkaProducer<String, String>(kafkaProps)) {
-            for (int i = 0; i < symbolCount; i++) {
-                final String key = stockSymbols[new Random().nextInt(stockSymbols.length)];
-                final String value = String.valueOf(i);
+        String studentId = "s2677989";
 
-                producer.send(new ProducerRecord<>(symbolTopic, key, value), (recordMetadata, ex) -> {
+        try (var producer = new KafkaProducer<String, String>(kafkaProps)) {
+            for (int i = 0; i < messageCount; i++) {
+//                final String key = stockSymbols[new Random().nextInt(stockSymbols.length)];
+//                final String value = String.valueOf(i);
+
+                String key = "omittedKey";
+                String json = String.format("{\"uid\":\"%s\", \"counter\":%d}", studentId, i);
+
+                producer.send(new ProducerRecord<>(writeTopic, json), (recordMetadata, ex) -> {
                     if (ex != null)
                         ex.printStackTrace();
                     else
-                        logger.info(String.format("Produced event to topic %s: key = %-10s value = %s%n", symbolTopic, key, value));
+                        logger.info(String.format("Produced event to topic %s: key = %-10s value = %s%n", writeTopic, key, json));
                 }).get(1000, TimeUnit.MILLISECONDS);
             }
-            logger.info(String.format("%d record(s) sent to Kafka\n", symbolCount));
+            logger.info(String.format("%d record(s) sent to Kafka\n", messageCount));
         } catch (ExecutionException e) {
             logger.error("execution exc: " + e);
             throw new RuntimeException(e);
         } catch (TimeoutException e) {
             logger.error("timeout exc: " + e);
+            throw new RuntimeException(e);
         } catch (InterruptedException e) {
             logger.error("interrupted exc: " + e);
             throw new RuntimeException(e);
         }
     }
 
-    @GetMapping("/receiveStockSymbols/{symbolTopic}/{consumeTimeMsec}")
-    public List<AbstractMap.SimpleEntry<String, String>> receiveStockSymbols(@PathVariable String symbolTopic, @PathVariable int consumeTimeMsec) {
-        logger.info(String.format("Reading stock-symbols from topic %s", symbolTopic));
+    @GetMapping("/{readTopic}/{timeoutInMsec}")
+    public List<String> receiveJsonMessages(@PathVariable String readTopic, @PathVariable int timeoutInMsec) {
+        logger.info(String.format("Reading messages from topic %s", readTopic));
         Properties kafkaProps = getKafkaProperties(environment);
 
-        var result = new ArrayList<AbstractMap.SimpleEntry<String, String>>();
+        List<String> result = new ArrayList<>();
 
         try (var consumer = new KafkaConsumer<String, String>(kafkaProps)) {
-            consumer.subscribe(Collections.singletonList(symbolTopic));
-            ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(consumeTimeMsec));
+            consumer.subscribe(Collections.singletonList(readTopic));
+            ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(timeoutInMsec));
             for (ConsumerRecord<String, String> record : records) {
                 logger.info(String.format("[%s] %s: %s %s %s %s", record.topic(), record.key(), record.value(), record.partition(), record.offset(), record.timestamp()));
-                result.add(new AbstractMap.SimpleEntry<>(record.key(), record.value()));
+                result.add(record.value());
             }
         }
 
