@@ -1,6 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Service as standalone process" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
     <envs>
+      <env name="ACP_STORAGE_SERVICE" value="http://localhost:8080" />
       <env name="KAFKA_BOOTSTRAP_SERVERS" value="localhost:9092" />
       <env name="RABBITMQ_HOST" value="localhost" />
       <env name="RABBITMQ_PORT" value="5672" />
