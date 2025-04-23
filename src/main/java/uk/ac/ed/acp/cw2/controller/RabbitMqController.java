@@ -53,7 +53,7 @@ public class RabbitMqController {
             channel.queueDeclare(queueName, false, false, false, null);
 
             for (int i = 0; i < messageCount; i++) {
-                String json = String.format("{\"uuid\":\"%s\", \"counter\":%d}", studentId, i);
+                String json = String.format("{\"uid\":\"%s\", \"counter\":%d}", studentId, i);
 
 //                final String symbol = stockSymbols[new Random().nextInt(stockSymbols.length)];
 //                final String value = String.valueOf(i);
