@@ -1,5 +1,6 @@
 package uk.ac.ed.acp.cw2.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -7,6 +8,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.ResponseEntity;
 import org.springframework.util.StopWatch;
 import org.springframework.web.bind.annotation.*;
 import redis.clients.jedis.Jedis;
@@ -126,5 +128,36 @@ public class KafkaController {
         }
 
         return result;
+    }
+
+
+
+    @PostMapping("/testMessage")
+    public ResponseEntity<String> sendTestProcessMessages(@RequestParam String topic) {
+        Properties kafkaProps = getKafkaProperties(environment);
+        String studentId = "s2677989";
+
+        List<String> testKeys = List.of("AAA", "ABCD", "ABCDE","1111","33333");  // good, good, bad ,good, bad
+        double[] values = {10.5, 11.0, 10.0, 4.0, 99.0};
+
+        try (var producer = new KafkaProducer<String, String>(kafkaProps)) {
+            for (int i = 0; i < testKeys.size(); i++) {
+                Map<String, Object> msg = new HashMap<>();
+                msg.put("uid", studentId);
+                msg.put("key", testKeys.get(i));
+                msg.put("comment", "test comment");
+                msg.put("value", values[i]);
+
+                String json = new ObjectMapper().writeValueAsString(msg);
+
+                producer.send(new ProducerRecord<>(topic, null, json)).get(1000, TimeUnit.MILLISECONDS);
+                logger.info(" Test message sent to {}: {}", topic, json);
+            }
+        } catch (Exception e) {
+            logger.error(" Failed to send test message", e);
+            return ResponseEntity.status(500).body("Failed");
+        }
+
+        return ResponseEntity.ok("Test messages sent to Kafka");
     }
 }
