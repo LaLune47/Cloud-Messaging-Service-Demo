@@ -1,6 +1,8 @@
 package uk.ac.ed.acp.cw2.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -9,8 +11,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.RestTemplate;
 import uk.ac.ed.acp.cw2.data.RuntimeEnvironment;
 
+import com.rabbitmq.client.ConnectionFactory;
+
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 
@@ -24,6 +30,7 @@ public class ServiceController {
 
     private static final Logger logger = LoggerFactory.getLogger(ServiceController.class);
     private final RuntimeEnvironment environment;
+    private final ObjectMapper mapper = new ObjectMapper();
 
     public ServiceController(RuntimeEnvironment environment) {
         this.environment = environment;
@@ -102,7 +109,7 @@ public class ServiceController {
                     String json = record.value();
                     logger.info("Received raw json-style message: {}", json);
 
-                    ObjectMapper mapper = new ObjectMapper();
+//                    ObjectMapper mapper = new ObjectMapper();
                     Map<String, Object> message = mapper.readValue(json, Map.class);
 
                     String key = (String) message.get("key");
@@ -120,12 +127,80 @@ public class ServiceController {
 
             logger.info("=======Finished collecting messages. Good: {}, Bad: {}", goodMessages.size(), badMessages.size());
 
-            // TODO: 下一步写入 ACP Storage + RabbitMQ
+            // ACP_BLOB
+            RestTemplate restTemplate = new RestTemplate();
+            String acpUrl = System.getenv("ACP_STORAGE_SERVICE") + "/api/v1/blob";
+
+            double runningTotal = 0.0;
+            List<Map<String, Object>> goodToSend = new ArrayList<>();
+
+            for (Map<String, Object> message : goodMessages) {
+                runningTotal += ((Number) message.get("value")).doubleValue();
+                message.put("runningTotalValue", runningTotal);
+
+                // post to acpUrl
+                ResponseEntity<Map> response = restTemplate.postForEntity(acpUrl, message, Map.class);
+                String uuid = (String) response.getBody().get("uuid");
+
+                message.put("uuid", uuid);
+                goodToSend.add(message);
+            }
+
+
+            ConnectionFactory factory = new ConnectionFactory();
+            factory.setHost(environment.getRabbitMqHost());
+            factory.setPort(environment.getRabbitMqPort());
+
+            try (Connection connection = factory.newConnection();
+                 Channel channel = connection.createChannel()) {
+
+                channel.queueDeclare(writeQueueGood, false, false, false, null);
+                channel.queueDeclare(writeQueueBad, false, false, false, null);
+
+//                ObjectMapper mapper = new ObjectMapper();
+
+                // send classified message to RabbitMQ
+                for (Map<String, Object> good : goodToSend) {
+                    String json = mapper.writeValueAsString(good);
+                    channel.basicPublish("", writeQueueGood, null, json.getBytes(StandardCharsets.UTF_8));
+                }
+                for (Map<String, Object> bad : badMessages) {
+                    String json = mapper.writeValueAsString(bad);
+                    channel.basicPublish("", writeQueueBad, null, json.getBytes(StandardCharsets.UTF_8));
+                }
+
+                // send total end message
+                double goodTotal = goodMessages.stream()
+                        .mapToDouble(m -> ((Number) m.get("value")).doubleValue()).sum();
+                double badTotal = badMessages.stream()
+                        .mapToDouble(m -> ((Number) m.get("value")).doubleValue()).sum();
+
+                Map<String, Object> totalGood = new LinkedHashMap<>();
+                totalGood.put("uid", "s2677989");
+                totalGood.put("key", "TOTAL");
+                totalGood.put("comment", "good total comment");
+                totalGood.put("value", goodTotal);
+
+                Map<String, Object> totalBad = new LinkedHashMap<>();
+                totalBad.put("uid", "s2677989");
+                totalBad.put("key", "TOTAL");
+                totalBad.put("comment", "bad total comment");
+                totalBad.put("value", badTotal);
+
+                String totalGoodJson = mapper.writeValueAsString(totalGood);
+                String totalBadJson = mapper.writeValueAsString(totalBad);
+
+                channel.basicPublish("", writeQueueGood, null, totalGoodJson.getBytes(StandardCharsets.UTF_8));
+                channel.basicPublish("", writeQueueBad, null, totalBadJson.getBytes(StandardCharsets.UTF_8));
+            }
+
+
+
             return ResponseEntity.ok("Kafka messages processed. Good: " + goodMessages.size() + ", Bad: " + badMessages.size());
 
         } catch (Exception e) {
             logger.error("Error during processing", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Processing failed: " + e.getMessage()); // todo状态码
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Processing failed: " + e.getMessage()); // todo status code
         }
     }
 
