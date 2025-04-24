@@ -12,6 +12,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
 import uk.ac.ed.acp.cw2.data.RuntimeEnvironment;
 
 import com.rabbitmq.client.ConnectionFactory;
@@ -203,5 +205,53 @@ public class ServiceController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Processing failed: " + e.getMessage()); // todo status code
         }
     }
+
+
+
+    @PostMapping("/transformMessages")
+    public ResponseEntity<String> transformMessages(@RequestBody Map<String, Object> requestBody) {
+        String readQueue = (String) requestBody.get("readQueue");
+        String writeQueue = (String) requestBody.get("writeQueue");
+        int messageCount = (int) requestBody.get("messageCount");
+
+        logger.info("Transforming {} messages from {} to {}", messageCount, readQueue, writeQueue);
+
+
+        int totalMessagesWritten = 0;
+        int totalMessagesProcessed = 0;
+        int totalRedisUpdates = 0;
+        double totalValueWritten = 0.0;
+        double totalAdded = 0.0;
+
+//        ObjectMapper mapper = new ObjectMapper();
+
+        try (
+                JedisPool jedisPool = new JedisPool(environment.getRedisHost(), environment.getRedisPort());
+                Jedis jedis = jedisPool.getResource();
+
+        ) {
+            ConnectionFactory factory = new ConnectionFactory();
+            factory.setHost(environment.getRabbitMqHost());
+            factory.setPort(environment.getRabbitMqPort());
+
+            try (Connection connection = factory.newConnection();
+                 Channel channel = connection.createChannel()) {
+
+                channel.queueDeclare(readQueue, false, false, false, null);
+                channel.queueDeclare(writeQueue, false, false, false, null);
+
+                // TODO: 从 readQueue 拉取 messageCount 条消息并分类处理
+                logger.info("✅ Environment ready: Redis + RabbitMQ connected");
+
+            }
+        } catch (Exception e) {
+            logger.error("Error in /transformMessages", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Transform failed: " + e.getMessage());
+        }
+
+        return ResponseEntity.ok("Transform completed successfully");
+    }
+
 
 }
