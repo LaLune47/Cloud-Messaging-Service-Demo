@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.server.ResponseStatusException;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import uk.ac.ed.acp.cw2.data.RuntimeEnvironment;
@@ -142,11 +143,15 @@ public class ServiceController {
                 message.put("runningTotalValue", runningTotal);
 
                 // post to acpUrl
-                ResponseEntity<Map> response = restTemplate.postForEntity(acpUrl, message, Map.class);
-                String uuid = (String) response.getBody().get("uuid");
-
-                message.put("uuid", uuid);
-                goodToSend.add(message);
+                try {
+                    ResponseEntity<Map> response = restTemplate.postForEntity(acpUrl, message, Map.class);
+                    String uuid = (String) response.getBody().get("uuid");
+                    message.put("uuid", uuid);
+                    goodToSend.add(message);
+                } catch (Exception e) {
+                    logger.error("Failed to send message to ACP", e);
+                    throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to POST to ACP Storage: " + e.getMessage());
+                }
             }
 
 
@@ -203,7 +208,7 @@ public class ServiceController {
 
         } catch (Exception e) {
             logger.error("Error during processing", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Processing failed: " + e.getMessage()); // todo status code
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Processing failed: " + e.getMessage());
         }
     }
 

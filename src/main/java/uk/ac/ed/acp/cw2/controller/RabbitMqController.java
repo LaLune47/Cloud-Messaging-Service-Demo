@@ -6,7 +6,10 @@ import com.rabbitmq.client.DeliverCallback;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import uk.ac.ed.acp.cw2.data.RuntimeEnvironment;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
@@ -44,7 +47,7 @@ public class RabbitMqController {
     public final String StockSymbolsConfig = "stock.symbols";
 
     @PutMapping("/{queueName}/{messageCount}")
-    public void sendMessagesToQueue(@PathVariable String queueName, @PathVariable int messageCount) {
+    public ResponseEntity<String> sendMessagesToQueue(@PathVariable String queueName, @PathVariable int messageCount) {
         logger.info("Writing {} messages in queue {}", messageCount, queueName);
         String studentId = "s2677989";
 
@@ -66,13 +69,14 @@ public class RabbitMqController {
             }
 
             logger.info("{} JSON message(s) sent to RabbitMQ queue {}\n", messageCount, queueName);
+            return ResponseEntity.ok(messageCount + " messages sent to " + queueName);
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "RabbitMQ send failed");
         }
     }
 
     @GetMapping("/{queueName}/{timeoutInMsec}")
-    public List<String> receiveMessages(@PathVariable String queueName, @PathVariable int timeoutInMsec) {
+    public ResponseEntity<List<String>> receiveMessages(@PathVariable String queueName, @PathVariable int timeoutInMsec) {
         logger.info(String.format("Reading messages from queue %s", queueName));
         List<String> result = new ArrayList<>();
 
@@ -92,11 +96,10 @@ public class RabbitMqController {
             Thread.sleep(timeoutInMsec);
 
             System.out.printf("done consuming events. %d record(s) received\n", result.size());
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Queue read failed");
         }
-
-        return result;
     }
 
 

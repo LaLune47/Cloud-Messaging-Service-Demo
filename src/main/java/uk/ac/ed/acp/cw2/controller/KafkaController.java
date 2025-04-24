@@ -8,9 +8,11 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StopWatch;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import uk.ac.ed.acp.cw2.data.RuntimeEnvironment;
@@ -77,7 +79,7 @@ public class KafkaController {
     }
 
     @PutMapping("/{writeTopic}/{messageCount}")
-    public void sendJsonMessages(@PathVariable String writeTopic, @PathVariable int messageCount) {
+    public ResponseEntity<String> sendJsonMessages(@PathVariable String writeTopic, @PathVariable int messageCount) {
         logger.info(String.format("Writing %d messages in topic %s", messageCount, writeTopic));
         Properties kafkaProps = getKafkaProperties(environment);
 
@@ -99,20 +101,21 @@ public class KafkaController {
                 }).get(1000, TimeUnit.MILLISECONDS);
             }
             logger.info(String.format("%d record(s) sent to Kafka\n", messageCount));
+            return ResponseEntity.ok("Sent " + messageCount + " messages to Kafka topic " + writeTopic);
         } catch (ExecutionException e) {
             logger.error("execution exc: " + e);
-            throw new RuntimeException(e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Kafka message send failed: " + e.getMessage());
         } catch (TimeoutException e) {
             logger.error("timeout exc: " + e);
-            throw new RuntimeException(e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Kafka message send failed: " + e.getMessage());
         } catch (InterruptedException e) {
             logger.error("interrupted exc: " + e);
-            throw new RuntimeException(e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Kafka message send failed: " + e.getMessage());
         }
     }
 
     @GetMapping("/{readTopic}/{timeoutInMsec}")
-    public List<String> receiveJsonMessages(@PathVariable String readTopic, @PathVariable int timeoutInMsec) {
+    public ResponseEntity<List<String>> receiveJsonMessages(@PathVariable String readTopic, @PathVariable int timeoutInMsec) {
         logger.info(String.format("Reading messages from topic %s", readTopic));
         Properties kafkaProps = getKafkaProperties(environment);
 
@@ -125,9 +128,12 @@ public class KafkaController {
                 logger.info(String.format("[%s] %s: %s %s %s %s", record.topic(), record.key(), record.value(), record.partition(), record.offset(), record.timestamp()));
                 result.add(record.value());
             }
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            logger.error("Kafka read failed", e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Kafka consume failed: " + e.getMessage());
         }
 
-        return result;
     }
 
 
