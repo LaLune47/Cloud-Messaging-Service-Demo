@@ -98,7 +98,7 @@ public class RabbitMqController {
             System.out.printf("done consuming events. %d record(s) received\n", result.size());
             return ResponseEntity.ok(result);
         } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Queue read failed");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Queue read failed");
         }
     }
 
