@@ -3,6 +3,7 @@ package uk.ac.ed.acp.cw2.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.GetResponse;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -223,7 +224,6 @@ public class ServiceController {
         double totalValueWritten = 0.0;
         double totalAdded = 0.0;
 
-//        ObjectMapper mapper = new ObjectMapper();
 
         try (
                 JedisPool jedisPool = new JedisPool(environment.getRedisHost(), environment.getRedisPort());
@@ -240,9 +240,78 @@ public class ServiceController {
                 channel.queueDeclare(readQueue, false, false, false, null);
                 channel.queueDeclare(writeQueue, false, false, false, null);
 
-                // TODO: 从 readQueue 拉取 messageCount 条消息并分类处理
-                logger.info("✅ Environment ready: Redis + RabbitMQ connected");
 
+                int processed = 0;
+                while (processed < messageCount) {
+                    GetResponse response = channel.basicGet(readQueue, true);
+                    if (response == null) {
+                        Thread.sleep(100);
+                        continue;
+                    }
+
+                    String msgJson = new String(response.getBody(), StandardCharsets.UTF_8);
+                    logger.info("Received: {}", msgJson);
+
+                    Map<String, Object> message = mapper.readValue(msgJson, Map.class);
+                    totalMessagesProcessed++;
+
+                    String key = (String) message.get("key");
+                    boolean isTombstone = !message.containsKey("version");
+
+                    if (isTombstone) {
+                        logger.info("Tombstone received for key {}", key);
+                        jedis.del(key);
+
+                        Map<String, Object> summary = new LinkedHashMap<>();
+                        summary.put("totalMessagesWritten", totalMessagesWritten);
+                        summary.put("totalMessagesProcessed", totalMessagesProcessed);
+                        summary.put("totalRedisUpdates", totalRedisUpdates);
+                        summary.put("totalValueWritten", totalValueWritten);
+                        summary.put("totalAdded", totalAdded);
+
+                        String summaryJson = mapper.writeValueAsString(summary);
+                        channel.basicPublish("", writeQueue, null, summaryJson.getBytes(StandardCharsets.UTF_8));
+                        logger.info("Sent tombstone summary: {}", summaryJson);
+                        processed++;
+                        continue;
+                    }
+
+                    int version = (Integer) message.get("version");
+                    double value = ((Number) message.get("value")).doubleValue();
+                    boolean shouldUpdate = false;
+
+                    String redisVersionStr = jedis.get(key);
+                    if (redisVersionStr == null) {
+                        shouldUpdate = true;
+                        logger.info("New key: {} → storing version {}", key, version);
+                    } else {
+                        int redisVersion = Integer.parseInt(redisVersionStr);
+                        if (version > redisVersion) {
+                            shouldUpdate = true;
+                            logger.info("Updating key: {} → {} > {}", key, version, redisVersion);
+                        } else {
+                            logger.info("Skipping Redis update for key {} (version {} <= {})", key, version, redisVersion);
+                        }
+                    }
+
+                    if (shouldUpdate) {
+                        jedis.set(key, String.valueOf(version));
+                        value += 10.5;
+                        message.put("value", value);
+                        totalRedisUpdates++;
+                        totalAdded += 10.5;
+                    }
+
+                    String finalMsgJson = mapper.writeValueAsString(message);
+                    channel.basicPublish("", writeQueue, null, finalMsgJson.getBytes(StandardCharsets.UTF_8));
+                    totalMessagesWritten++;
+                    totalValueWritten += value;
+                    logger.info("Sent message: {}", finalMsgJson);
+
+                    processed++;
+                }
+
+                logger.info("Environment ready: Redis + RabbitMQ connected");
             }
         } catch (Exception e) {
             logger.error("Error in /transformMessages", e);
