@@ -1,6 +1,7 @@
 package uk.ac.ed.acp.cw2.controller;
 
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.DeliverCallback;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
@@ -97,4 +98,31 @@ public class RabbitMqController {
 
         return result;
     }
+
+
+    @PostMapping("/testTransformMessages")
+    public void sendTransformTestData(@RequestParam String queueName) throws Exception {
+
+        try (Connection conn = factory.newConnection(); Channel channel = conn.createChannel()) {
+            channel.queueDeclare(queueName, false, false, false, null);
+
+            ObjectMapper mapper = new ObjectMapper();
+
+            List<Map<String, Object>> testData = List.of(
+                    Map.of("key", "ABC", "version", 1, "value", 100.0),
+                    Map.of("key", "ABC", "version", 1, "value", 200.0),
+                    Map.of("key", "ABC", "version", 3, "value", 400.0),
+                    Map.of("key", "ABC", "version", 2, "value", 200.0),
+                    Map.of("key", "ABC"),
+                    Map.of("key", "ABC", "version", 2, "value", 200.0)
+            );
+
+            for (Map<String, Object> msg : testData) {
+                String json = mapper.writeValueAsString(msg);
+                channel.basicPublish("", queueName, null, json.getBytes(StandardCharsets.UTF_8));
+                logger.info("Sent test message: {}", json);
+            }
+        }
+    }
+
 }
