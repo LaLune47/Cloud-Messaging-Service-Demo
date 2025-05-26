@@ -1,3 +1,30 @@
+# Cloud Messaging Service Demo
+
+This project is the code part of the ACP Assignment 2 at the UoE. It demonstrates a cloud-native messaging system using Kafka, RabbitMQ, and Spring Boot.
+
+## Overview
+
+The application provides a RESTful API for ingesting, processing, transforming, and forwarding messages between Kafka and RabbitMQ. It is designed as a microservice with extensibility and clarity in mind, adhering to best practices of cloud-native system design.
+
+## Features
+
+- **/processMessages**  
+  Reads messages from a Kafka topic, stores them in a local ACP-style store, then forwards the processed results to RabbitMQ.
+
+- **/transformMessages**  
+  Retrieves messages from RabbitMQ, transforms them into a custom format, and publishes the transformed results to a designated RabbitMQ queue.
+
+
+## Technologies Used
+
+- Java 17  
+- Spring Boot  
+- Apache Kafka  
+- RabbitMQ  
+- Docker (for local development and testing)
+
+
+
 # Getting Started
 
 The following sections describe in some detail the needed steps to setup the environment and give explanations why and how things are configured
